@@ -2,6 +2,8 @@ package com.bignerdranch.android.susanin.ui.home
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.AlertDialog
+import android.content.DialogInterface
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -13,14 +15,13 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import com.bignerdranch.android.susanin.BuildConfig
-import com.bignerdranch.android.susanin.R
-import com.bignerdranch.android.susanin.SusaninLocationManager
+import com.bignerdranch.android.susanin.*
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import org.osmdroid.api.IMapController
 import org.osmdroid.config.Configuration
@@ -30,6 +31,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.infowindow.InfoWindow
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
@@ -139,7 +141,6 @@ class HomeFragment : Fragment() {
         fab.setOnClickListener { it ->
             locationManager.updateLocation()
             updateLoc()
-
         }
 
         val mReceive: MapEventsReceiver = object : MapEventsReceiver {
@@ -148,25 +149,70 @@ class HomeFragment : Fragment() {
             }
 
             override fun longPressHelper(point: GeoPoint): Boolean {
-                Log.e(
-                    "TAG",
-                    "Long press " +
-                            "latitude ${point.latitude} " +
-                            "longitude ${point.longitude}"
-                )
 
-                val startMarker = Marker(map)
-                startMarker.position = point
-                startMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                map.overlays.add(startMarker)
+                val editText = EditText(context)
+                val alert = AlertDialog.Builder(activity)
+                    .setTitle("Creating point")
+                    .setNegativeButton(
+                        "Cancel"
+                    ) { dialog, which ->  }
+                    .setPositiveButton(
+                        "Add"
+                    ) { dialog, which ->
+                        Log.e(
+                            "TAG",
+                            "Long press " +
+                                    "latitude ${point.latitude} " +
+                                    "longitude ${point.longitude}"
+                        )
 
-                geoPoint = point
+                        val startMarker = Marker(map)
+                        startMarker.position = point
+                        startMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+
+                        val susaninPoint = SusaninPoint(
+                            point.latitude,
+                            point.longitude,
+                            editText.text.toString()
+                        )
+                        PointDBHelper.get(activity!!).addSusaninPoint(susaninPoint)
+
+                        startMarker.title = susaninPoint.name
+
+                        map.overlays.add(startMarker)
+
+                        geoPoint = point
+                    }
+                    .setView(editText)
+                alert.create().show()
+
                 return false
             }
         }
         val overlayEvents = MapEventsOverlay(requireContext(), mReceive)
         map.overlays.add(overlayEvents)
         return view
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        updateUI()
+        locationManager.updateLocation()
+        updateLoc()
+        map.invalidate()
+    }
+
+    private fun updateUI() {
+        val points = PointDBHelper.get(requireActivity()).getSusaninPoints()
+
+        for (point in points) {
+            val marker = Marker(map)
+
+            marker.position = GeoPoint(point.latitude, point.longitude)
+            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            marker.title = point.name
+            map.overlays.add(marker)
+        }
     }
 
     private fun getBitmap(@DrawableRes resId: Int): Bitmap? {
@@ -201,6 +247,10 @@ class HomeFragment : Fragment() {
                 ?: locationManager.locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
         try {
             val locGeoPoint = GeoPoint(location.latitude, location.longitude)
+            Log.v(
+                "HomeFragment",
+                "Last location latitude ${location.latitude} longitude ${location.longitude}"
+            )
             map.controller.setCenter(locGeoPoint)
             myLocationMarker.position = locGeoPoint
 
